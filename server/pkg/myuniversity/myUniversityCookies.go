@@ -17,8 +17,9 @@ func cancelRedirectHandler(req *http.Request, via []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
-func getRetriableClient(jar http.CookieJar) *http.Client {
+func getRetriableClient() *http.Client {
 	client := retryablehttp.NewClient()
+	client.RetryMax = 10
 
 	return client.StandardClient()
 }
@@ -26,7 +27,6 @@ func getRetriableClient(jar http.CookieJar) *http.Client {
 func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Cookie, error) {
 	jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: nil})
 
-	// client := getRetriableClient(jar)
 	client := &http.Client{}
 	client.Jar = jar
 	client.CheckRedirect = cancelRedirectHandler
@@ -41,7 +41,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 	if resp.StatusCode != http.StatusOK {
 		log.Sugar().Errorw("failed to request", "url", myUniURL, "response", resp.Status)
 
-		return nil, fmt.Errorf("failed to request %q: %w", myUniURL, ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("failed to request %q: %w", myUniURL, ErrInnoSsoAPIChanged)
 	}
 	defer resp.Body.Close()
 
@@ -56,7 +56,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 		log.Sugar().
 			Errorw("status must be StatusFound", "url", myUniAuthURL, "status", respWithRedirect.Status)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 	defer respWithRedirect.Body.Close()
 
@@ -66,7 +66,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 	if err != nil {
 		log.Sugar().Errorw("failed to get redirect url to sso")
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 
 	ssoURLstr := ssoURL.String()
@@ -81,7 +81,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 		log.Sugar().
 			Errorw("status must be StatusOK", "url", ssoURLstr, "status", ssoGetResp.Status)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 	defer ssoGetResp.Body.Close()
 
@@ -98,7 +98,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 	if matches == nil || len(matches) < 1 {
 		log.Sugar().Errorw("no client-request-id was found", "url", ssoURLstr)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 
 	clientRequestID := matches[1]
@@ -131,7 +131,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 		log.Sugar().
 			Errorw("status must be StatusFound", "url", myUniAuthURL, "status", ssoPostResp.Status)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 
 	/////////////////////////////////////////////////////////////////////////
@@ -144,7 +144,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 		log.Sugar().
 			Errorw("status must be StatusFound", "url", myUniAuthURL, "status", ssoGetResp.Status)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 	defer ssoGetResp.Body.Close()
 
@@ -154,7 +154,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 	if err != nil {
 		log.Sugar().Debugw("failed to get redirect url to sso", "url", myUniAuthURL)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 
 	/////////////////////////////////////////////////////////////////////////
@@ -167,7 +167,7 @@ func GetMyUniversityCookies(email, password string, log *zap.Logger) ([]*http.Co
 		log.Sugar().
 			Errorw("status must be StatusOK", "url", myUniRedirectURL.String(), "status", myUniRedirectResp.Status)
 
-		return nil, fmt.Errorf("%w", ErrMyUniversityAPIChanged)
+		return nil, fmt.Errorf("%w", ErrInnoSsoAPIChanged)
 	}
 
 	/////////////////////////////////////////////////////////////////////////

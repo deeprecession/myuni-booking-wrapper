@@ -3,7 +3,6 @@ package bookings
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 )
@@ -74,10 +73,7 @@ func newRoomBookingsRequest(url string, start, end time.Time) *http.Request {
 		}
 	}`, formatedStart, formatedEnd))
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		log.Fatalf("Error creating request: %v", err)
-	}
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 
 	req.Header.Set("Action", "FindItem")
 	req.Header.Set("Content-Type", "application/json; charset=UTF-8")

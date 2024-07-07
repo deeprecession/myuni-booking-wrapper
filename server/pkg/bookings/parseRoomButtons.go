@@ -21,13 +21,27 @@ func getRoomButtons(client *http.Client) ([]RoomButton, error) {
 	if err != nil {
 		log.Fatalf("failed to get bookings links: %v", err)
 	}
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("staus code have to be StatusOK: %w", ErrMyUniversityApiChanged)
+	}
 
 	responseHTML, err := html.Parse(response.Body)
 	if err != nil {
-		log.Fatalf("failed to parse html: %v", err)
+		return nil, fmt.Errorf("failed to parse html: %w", ErrMyUniversityApiChanged)
 	}
 
-	return findRoomButtons(responseHTML), nil
+	roomButtons := findRoomButtons(responseHTML)
+
+	if len(roomButtons) == 0 {
+		return nil, fmt.Errorf("%w", ErrBadCookies)
+	}
+
+	roomButtons, err = transformButtonURLs(roomButtons)
+	if err != nil {
+		return nil, fmt.Errorf("failed to transform butotn URLs: %w", ErrMyUniversityApiChanged)
+	}
+
+	return roomButtons, nil
 }
 
 func findRoomButtons(n *html.Node) []RoomButton {
@@ -58,7 +72,7 @@ func findRoomButtons(n *html.Node) []RoomButton {
 
 			for _, attr := range n.Attr {
 				if attr.Key == "href" {
-					roomButton.URL = transformURL(attr.Val)
+					roomButton.URL = attr.Val
 					break
 				}
 			}
@@ -78,20 +92,42 @@ func findRoomButtons(n *html.Node) []RoomButton {
 	return buttons
 }
 
-func transformURL(oldURL string) string {
+func transformButtonURLs(roomButtons []RoomButton) ([]RoomButton, error) {
+	newRoomButtons := make([]RoomButton, 0, len(roomButtons))
+
+	for _, room := range roomButtons {
+
+		newURL, err := transformURL(room.URL)
+		if err != nil {
+		}
+
+		newRoom := RoomButton{
+			ID:   room.ID,
+			Name: room.Name,
+			URL:  newURL,
+		}
+
+		newRoomButtons = append(newRoomButtons, newRoom)
+	}
+
+	return newRoomButtons, nil
+}
+
+func transformURL(oldURL string) (string, error) {
 	u, err := url.Parse(oldURL)
 	if err != nil {
-		log.Fatalf("Error parsing URL: %v", err)
+		return "", fmt.Errorf("bad room button URL: %w", ErrMyUniversityApiChanged)
 	}
+
 	parts := strings.Split(u.Path, "/")
 	if len(parts) < 4 {
-		log.Fatalf("Unexpected URL format: %s", oldURL)
+		return "", fmt.Errorf("bad room button URL: %w", ErrMyUniversityApiChanged)
 	}
-	// New URL format
+
 	newURL := fmt.Sprintf(
 		"https://mail.innopolis.ru/owa/calendar/%s/%s/service.svc?action=FindItem&ID=-1&AC=1",
 		parts[3],
 		parts[4],
 	)
-	return newURL
+	return newURL, nil
 }

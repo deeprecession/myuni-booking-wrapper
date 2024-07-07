@@ -26,7 +26,7 @@ func main() {
 	start := time.Now()
 	end := time.Now().Add(time.Hour * 24)
 
-	_, err = bookings.GetRooms(myUniversityCookies, start, end)
+	_, err = bookings.GetRooms(log, myUniversityCookies, start, end)
 	if err != nil {
 		log.Sugar().Fatalf("failed to get rooms with bookings: %v", err)
 	}

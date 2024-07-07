@@ -3,14 +3,14 @@ package bookings
 import (
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
+	"go.uber.org/zap"
 )
 
 type Booking struct {
@@ -25,7 +25,7 @@ type Room struct {
 	ID       int
 }
 
-func GetRooms(myUniCookies []*http.Cookie, start, end time.Time) ([]Room, error) {
+func GetRooms(log *zap.Logger, myUniCookies []*http.Cookie, start, end time.Time) ([]Room, error) {
 	client := getClientWithCookies(myUniCookies)
 
 	roomButtons, err := getRoomButtons(client)
@@ -33,7 +33,10 @@ func GetRooms(myUniCookies []*http.Cookie, start, end time.Time) ([]Room, error)
 		return nil, err
 	}
 
-	rooms := getAllRoomsBookings(client, roomButtons, start, end)
+	rooms, err := getAllRoomsBookings(client, roomButtons, start, end)
+	if err != nil {
+		return nil, err
+	}
 
 	return rooms, nil
 }
@@ -44,40 +47,56 @@ func getClientWithCookies(myUniCookies []*http.Cookie) *http.Client {
 	myUniversityURL, _ := url.Parse("https://my.university.innopolis.ru")
 	jar.SetCookies(myUniversityURL, myUniCookies)
 
-	client := retryablehttp.NewClient()
-	client.HTTPClient.Jar = jar
+	client := &http.Client{}
+	client.Jar = jar
 
-	return client.StandardClient()
+	return client
 }
 
 func getAllRoomsBookings(
 	client *http.Client,
-	urls []RoomButton,
+	roomButtons []RoomButton,
 	start, end time.Time,
-) []Room {
+) ([]Room, error) {
 	rooms := make([]Room, 0)
 
-	for _, roomButtons := range urls {
-		req := newRoomBookingsRequest(roomButtons.URL, start, end)
+	for _, room := range roomButtons {
+		req := newRoomBookingsRequest(room.URL, start, end)
 
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Fatalf("Error making request: %v", err)
+			return nil, fmt.Errorf(
+				"failed to make a request to get bookings for room %v : %w",
+				room.Name,
+				err,
+			)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf(
+				"failed to make a request to get bookings for room %v : %w",
+				room.Name, ErrMyUniversityApiChanged,
+			)
 		}
 		defer resp.Body.Close()
 
-		bookings := parseRoomBookings(resp)
+		bookings, err := parseRoomBookings(resp)
+		if err != nil {
+			return nil, err
+		}
 
-		room := Room{ID: roomButtons.ID, Name: roomButtons.Name, Bookings: bookings}
+		room := Room{ID: room.ID, Name: room.Name, Bookings: bookings}
 
 		rooms = append(rooms, room)
 	}
 
-	return rooms
+	return rooms, nil
 }
 
-func parseRoomBookings(resp *http.Response) []Booking {
-	jsonResponse := parseBookingsResponse(resp)
+func parseRoomBookings(resp *http.Response) ([]Booking, error) {
+	jsonResponse, err := parseBookingsResponse(resp)
+	if err != nil {
+		return nil, err
+	}
 
 	bookings := make([]Booking, 0)
 	for _, item := range jsonResponse {
@@ -94,17 +113,18 @@ func parseRoomBookings(resp *http.Response) []Booking {
 		bookings = append(bookings, booking)
 	}
 
-	return bookings
+	return bookings, nil
 }
 
-func parseBookingsResponse(resp *http.Response) []RootFolderItem {
+func parseBookingsResponse(resp *http.Response) ([]RootFolderItem, error) {
 	var reader io.ReadCloser
 	switch resp.Header.Get("Content-Encoding") {
 	case "gzip":
 		reader, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			log.Fatalf("Error creating gzip reader: %v", err)
+			return nil, fmt.Errorf("Error creating gzip reader: %w", ErrMyUniversityApiChanged)
 		}
+
 		defer reader.Close()
 	default:
 		reader = resp.Body
@@ -112,14 +132,21 @@ func parseBookingsResponse(resp *http.Response) []RootFolderItem {
 
 	body, err := io.ReadAll(reader)
 	if err != nil {
-		log.Fatalf("Error reading response body: %v", err)
+		return nil, fmt.Errorf("Error creating gzip reader: %w", err)
 	}
 
 	var jsonResponse GetRoomBookingsResponse
 	err = json.Unmarshal(body, &jsonResponse)
 	if err != nil {
-		log.Fatalf("Error unmarshaling response body: %v", err)
+		return nil, fmt.Errorf("Error unmarshaling response body: %w", ErrMyUniversityApiChanged)
 	}
 
-	return jsonResponse.Body.ResponseMessages.Items[0].RootFolder.Items
+	if len(jsonResponse.Body.ResponseMessages.Items) == 0 {
+		return nil, fmt.Errorf(
+			"ResponseMessages Items have to be not empty: %w",
+			ErrMyUniversityApiChanged,
+		)
+	}
+
+	return jsonResponse.Body.ResponseMessages.Items[0].RootFolder.Items, nil
 }
